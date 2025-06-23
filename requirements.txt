@@ -1,0 +1,8 @@
+markdown-it-py
+nltk
+spacy
+flask # Or FastAPI, for potential future API
+# python-dotenv # For managing environment variables if needed later
+# For spacy model:
+# en_core_web_sm # Or a Chinese model if we decide to use one for MVP
+# For NLTK data (if needed, download via nltk.download(...))
