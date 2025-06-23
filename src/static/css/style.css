@@ -1,0 +1,88 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #f4f4f4;
+    color: #333;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+.container {
+    width: 90%;
+    max-width: 1200px;
+    margin: 20px auto;
+    padding: 20px;
+    background-color: #fff;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+header h1 {
+    text-align: center;
+    color: #333;
+    margin-bottom: 20px;
+}
+
+.input-area, .preview-area {
+    margin-bottom: 20px;
+    display: flex;
+    flex-direction: column;
+    min-height: 300px; /* Minimum height for text areas */
+}
+
+textarea#markdown_input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 14px;
+    flex-grow: 1;
+    min-height: 250px; /* Ensure textarea itself has a good min height */
+}
+
+button {
+    display: block;
+    width: 150px;
+    padding: 10px 15px;
+    margin: 10px auto 20px auto; /* Center button */
+    background-color: #5cb85c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+button:hover {
+    background-color: #4cae4c;
+}
+
+#preview-output {
+    border: 1px solid #ddd;
+    padding: 15px;
+    background-color: #f9f9f9;
+    border-radius: 4px;
+    overflow-wrap: break-word;
+    word-wrap: break-word; /* Older browsers */
+    hyphens: auto; /* Allow hyphenation */
+    flex-grow: 1; /* Make preview area grow */
+    min-height: 250px;
+}
+
+/* Styles for the content *within* #preview-output will come from smart_templates inline styles */
+
+footer {
+    text-align: center;
+    padding: 15px 0;
+    background-color: #333;
+    color: #fff;
+    width: 100%;
+    margin-top: auto; /* Push footer to bottom */
+}

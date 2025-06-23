@@ -4,6 +4,57 @@ from markdown_it import MarkdownIt
 class SemanticAnalyzer:
     def __init__(self):
         self.md = MarkdownIt()
+        # Regex for data paragraphs:
+        # Looks for percentages, currency, multiple numbers, or data-related keywords.
+        self.data_paragraph_keywords = re.compile(
+            r'\b(同比|环比|增长|下降|上涨|减少|季度|年度|营收|利润|指标|数据)\b',
+            re.IGNORECASE
+        )
+        self.data_paragraph_patterns = re.compile(
+            r'(?:(\d{1,3}(,\d{3})*(\.\d+)?%|\d+(\.\d+)?%))|'  # Percentages like 1,234.56% or 10%
+            r'(?:[￥$€£¥]\s*\d{1,3}(,\d{3})*(\.\d+)?)|'    # Currency like ¥ 1,234.50 or $500
+            r'(?:\b\d{4}年|\bQ[1-4]\b)|'                     # Dates like 2023年 or Q1
+            # r'(\b\d[\d,.]*\b\s*){3,}|'                    # Removed: Three or more numbers in sequence, rely on distinct_number_hits
+            r'(=|\+|-|\*|/)',                              # Basic formula indicators
+            re.IGNORECASE
+        )
+        # Threshold for number of data indicators to qualify as a data paragraph
+        self.data_paragraph_threshold = 2
+
+
+    def _is_data_paragraph(self, text_content: str) -> bool:
+        """
+        Determines if a paragraph content qualifies as a data paragraph.
+        """
+        if not text_content or len(text_content) > 500: # Avoid overly long paragraphs
+            return False
+
+        keyword_hits = len(self.data_paragraph_keywords.findall(text_content))
+        pattern_hits = len(self.data_paragraph_patterns.findall(text_content))
+
+        numbers = re.findall(r'\d[\d,.]*', text_content) # Removed \b for more general number finding
+        distinct_number_hits = len(set(numbers))
+
+        # print(f"DEBUG DATA PARA: Text: '{text_content[:50]}...' | Keywords: {keyword_hits} | Patterns: {pattern_hits} | Distinct Numbers: {distinct_number_hits}") # Commented out
+
+        if pattern_hits >= self.data_paragraph_threshold:
+            return True
+        if pattern_hits >= 1 and keyword_hits >= 1:
+            return True
+        if keyword_hits >= 2 and distinct_number_hits >=1:
+            return True
+        if distinct_number_hits >= 4:
+             return True
+        if distinct_number_hits == 3 and len(text_content) < 150:
+            return True
+        if distinct_number_hits == 2 and len(text_content) < 70 and keyword_hits >= 1:
+            return True
+        if distinct_number_hits >= 2 and len(text_content) < 70 and pattern_hits >=1 :
+            return True
+        if distinct_number_hits >= 2 and len(text_content) < 50 :
+            return True
+
+        return False
 
     def _extract_inline_content(self, tokens: list, start_index: int, stop_token_type: str) -> tuple[str, str, list[dict], int]:
         """
@@ -37,7 +88,7 @@ class SemanticAnalyzer:
                         raw_parts.append(f"![{alt}]({src})")
                         # content_parts.append(f"![{alt}]({src})") # image raw is part of text_content for replacement
                     elif token.type == "softbreak":
-                        content_parts.append("\n") # Changed from space to newline
+                        content_parts.append("\n")
                         raw_parts.append("\n")
                     elif token.type == "hardbreak":
                         content_parts.append("\n")
@@ -50,7 +101,6 @@ class SemanticAnalyzer:
                 src = dict(outer_token.attrs).get('src', '')
                 image_elements.append({ "type": "image", "alt": alt, "src": src, "raw": f"![{alt}]({src})" })
                 raw_parts.append(f"![{alt}]({src})")
-                # content_parts.append(f"![{alt}]({src})")
 
             current_idx += 1
 
@@ -88,42 +138,26 @@ class SemanticAnalyzer:
                 # print(f"DEBUG SRC: Found paragraph_open at {i}")
                 text_content, raw_content, images_in_para, next_idx = self._extract_inline_content(tokens, i + 1, "paragraph_close")
 
-                # The text_content from _extract_inline_content now includes the raw markdown of images.
-                # We need to add image elements first, then create a paragraph from the text
-                # *after* removing the raw markdown of those images from it.
-
-                current_paragraph_text_parts = []
-                last_idx = 0
-
-                # Reconstruct raw_content to include only text segments for the paragraph
-                # This is tricky if text_content itself was used for this. Let's use raw_content from _extract.
-                # The goal is: images are separate elements. Paragraphs contain text around them.
-
-                # Add images found
                 elements.extend(images_in_para)
 
-                # Create text content for paragraph by removing image raw markdown
                 actual_text_for_paragraph = text_content
                 if images_in_para:
                     temp_text = text_content
                     for img_el in images_in_para:
-                        # Replace only the first occurrence in case of identical image markdown strings
                         temp_text = temp_text.replace(img_el["raw"], "", 1)
                     actual_text_for_paragraph = temp_text.strip()
 
-                # Consolidate multiple newlines resulting from image removal into single newlines or spaces
-                # This step is important if images were on their own lines within the original paragraph block
                 if actual_text_for_paragraph:
                     actual_text_for_paragraph = re.sub(r'\n\s*\n', '\n', actual_text_for_paragraph).strip()
-                    # Also consolidate multiple spaces into single spaces
                     actual_text_for_paragraph = re.sub(r'\s{2,}', ' ', actual_text_for_paragraph).strip()
 
 
                 if actual_text_for_paragraph:
+                    para_type = "data_paragraph" if self._is_data_paragraph(actual_text_for_paragraph) else "paragraph"
                     elements.append({
-                        "type": "paragraph",
+                        "type": para_type,
                         "content": actual_text_for_paragraph,
-                        "raw": raw_content # Keep original raw of the paragraph block
+                        "raw": raw_content
                     })
 
                 i = next_idx + 1
@@ -140,7 +174,6 @@ class SemanticAnalyzer:
                     if tokens[j].type == "paragraph_open":
                         # print(f"DEBUG SRC:     Found paragraph_open in BQ at {j}")
                         text_c, raw_p_c, images_in_bq_p, next_p_idx = self._extract_inline_content(tokens, j + 1, "paragraph_close")
-                        # print(f"DEBUG SRC:     _extract_inline_content from BQ para returned: text='{text_c[:30]}...', images={len(images_in_bq_p)}, next_idx={next_p_idx}")
                         elements.extend(images_in_bq_p)
 
                         actual_text_for_bq_para = text_c
@@ -152,7 +185,8 @@ class SemanticAnalyzer:
 
                         if actual_text_for_bq_para:
                             actual_text_for_bq_para = re.sub(r'\n\s*\n', '\n', actual_text_for_bq_para).strip()
-                            if actual_text_for_bq_para: # Add only if text remains
+                            actual_text_for_bq_para = re.sub(r'\s{2,}', ' ', actual_text_for_bq_para).strip()
+                            if actual_text_for_bq_para:
                                 blockquote_collected_texts.append(actual_text_for_bq_para)
                         j = next_p_idx
                         # print(f"DEBUG SRC:     BQ paragraph processed, j is now {j} (points to paragraph_close)")
@@ -194,6 +228,7 @@ class SemanticAnalyzer:
                                 actual_text_for_li = temp_text.strip()
 
                             actual_text_for_li = re.sub(r'\n\s*\n', '\n', actual_text_for_li).strip()
+                            actual_text_for_li = re.sub(r'\s{2,}', ' ', actual_text_for_li).strip()
                             if actual_text_for_li:
                                 item_text_content = actual_text_for_li
                             k = next_li_p_idx
@@ -246,17 +281,54 @@ class SemanticAnalyzer:
 if __name__ == '__main__':
     analyzer = SemanticAnalyzer()
 
-    def print_elements(md_string, title="Test Case"):
-        # print(f"\n--- {title} ---")
+    def print_elements(md_string, title="Test Case"): # Keep this for potential direct debugging
+        print(f"\n--- {title} ---")
         # print(f"Markdown:\n{md_string}")
         parsed = analyzer.parse_markdown_to_elements(md_string)
-        # print("Parsed Elements:")
-        # if not parsed:
-            # print(" (No elements parsed)")
-        # for el_idx, element in enumerate(parsed):
-            # print(f"  {el_idx}: {element}")
-    pass
+        print("Parsed Elements:")
+        if not parsed:
+            print(" (No elements parsed)")
+        for el_idx, element in enumerate(parsed):
+            print(f"  {el_idx}: {element}")
 
-    # print_elements("> This is a quote.\n> Second line of quote.", "Blockquote Test")
-    # print_elements("This is a simple paragraph.", "Simple Paragraph Test")
-    # ... all other print_elements calls commented out ...
+    print("\n--- Data Paragraph Detection Debug ---")
+    data_test_cases = {
+        "percentage_and_currency": "营收达到 ￥1,234,567.89元，利润增长了15.5%。",
+        "keywords_and_numbers": "2023年第四季度，活跃用户同比增长20%，达到500万。",
+        "multiple_numbers": "数据显示：A为100，B是2500，C为30.5，D是0.5。",
+        "formula_like": "计算公式为：X = (Y + Z) / 2 * 用户数。",
+        "mixed_financial": "公司年度财报显示，收入为 $5.2M，同比增长 12%。",
+        "simple_stats": "平均值为 50.2，标准差为 3.1，最大值为 99.",
+        "non_data_para": "这是一段普通的文本，不包含特定的数据指标或金融术语。",
+        "borderline_few_numbers": "库存剩余 3 箱，单价 50 元。",
+        "long_text_with_few_numbers": "这是一个非常长的段落，它碰巧包含了一个数字，比如 100，但主要内容是关于历史事件的详细描述，而不是数据报告。" * 3
+    }
+
+    for name, text in data_test_cases.items():
+        print(f"\n--- Testing case: '{name}' ---")
+        # print(f"Input text: {text}") # Keep output cleaner
+        # is_data = analyzer._is_data_paragraph(text) # _is_data_paragraph is called by parse_markdown_to_elements
+        # print(f"Result of _is_data_paragraph: {is_data}")
+
+        elements = analyzer.parse_markdown_to_elements(text) # This will call _is_data_paragraph and print its debug line
+        if elements:
+            para_like_elements = [el for el in elements if el['type'] in ['paragraph', 'data_paragraph']]
+            if para_like_elements:
+                 print(f"Full parse element type for '{name}': {para_like_elements[0]['type']}")
+            else:
+                print(f"Full parse for '{name}' did not yield a paragraph-like element.")
+        else:
+            print(f"Full parse for '{name}' yielded no elements.")
+
+    # print("\n--- Full parsing for a data-rich example ---")
+    # sample_data_md = """
+# Regular paragraph.
+
+# 2023年GDP增速6.3%，CPI同比上涨2.1%。营收达到 ￥1,234,567.89元。
+
+# Another regular paragraph.
+
+# Key metrics: Sales volume increased by 15% in Q3. User growth is 1000 per day.
+# The formula is A = B * (C + D) / E.
+    # """
+    # print_elements(sample_data_md, "Data Rich Document")

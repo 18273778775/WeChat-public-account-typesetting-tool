@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文优 - AI排版助手</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>文优 - AI驱动内容感知排版</h1>
+        </header>
+
+        <div class="input-area">
+            <h2>输入Markdown内容:</h2>
+            <textarea id="markdown_input" name="markdown_input" rows="15" placeholder="在此处粘贴您的Markdown..."></textarea>
+            <button onclick="renderMarkdown()">生成预览</button>
+        </div>
+
+        <div class="preview-area">
+            <h2>排版预览:</h2>
+            <div id="preview-output">
+                <!-- Styled HTML will appear here -->
+                请在此处输入Markdown并点击“生成预览”按钮。
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2024 文优AI排版</p>
+    </footer>
+
+    <script>
+        async function renderMarkdown() {
+            const markdownText = document.getElementById('markdown_input').value;
+            const previewOutput = document.getElementById('preview-output');
+
+            previewOutput.innerHTML = '正在生成预览...';
+
+            try {
+                const response = await fetch('/render', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ markdown: markdownText }),
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    previewOutput.innerHTML = `<p style="color: red;">错误: ${errorData.error || response.statusText}</p>`;
+                    return;
+                }
+
+                const data = await response.json();
+                previewOutput.innerHTML = data.html;
+            } catch (error) {
+                console.error('Render error:', error);
+                previewOutput.innerHTML = `<p style="color: red;">渲染时发生客户端错误: ${error.message}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>

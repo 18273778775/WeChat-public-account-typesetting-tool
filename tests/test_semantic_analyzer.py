@@ -126,5 +126,46 @@ class TestSemanticAnalyzer(unittest.TestCase):
         self.assertEqual(elements[3]["type"], "list_item")
         self.assertEqual(elements[4]["type"], "image")
 
+    def test_data_paragraph_identification(self):
+        test_cases = {
+            "percentage_and_currency": "营收达到 ￥1,234,567.89元，利润增长了15.5%。",
+            "keywords_and_numbers": "2023年第四季度，活跃用户同比增长20%，达到500万。",
+            "multiple_numbers": "数据显示：A为100，B是2500，C为30.5，D是0.5。",
+            "formula_like": "计算公式为：X = (Y + Z) / 2 * 用户数。",
+            "mixed_financial": "公司年度财报显示，收入为 $5.2M，同比增长 12%。",
+            "simple_stats": "平均值为 50.2，标准差为 3.1，最大值为 99.",
+            "non_data_para": "这是一段普通的文本，不包含特定的数据指标或金融术语。",
+            "borderline_few_numbers": "库存剩余 3 箱，单价 50 元。", # Might be data, might not, depends on threshold
+            "long_text_with_few_numbers": "这是一个非常长的段落，它碰巧包含了一个数字，比如 100，但主要内容是关于历史事件的详细描述，而不是数据报告。" * 3 # >500 chars
+        }
+
+        expected_types = {
+            "percentage_and_currency": "data_paragraph",
+            "keywords_and_numbers": "data_paragraph",
+            "multiple_numbers": "data_paragraph",
+            "formula_like": "data_paragraph", # Basic formula indicators
+            "mixed_financial": "data_paragraph",
+            "simple_stats": "data_paragraph",
+            "non_data_para": "paragraph",
+            "borderline_few_numbers": "data_paragraph", # Current regex/heuristics might pick this up due to 2 numbers
+            "long_text_with_few_numbers": "paragraph" # Should be paragraph due to length constraint
+        }
+
+        for name, md_text in test_cases.items():
+            with self.subTest(name=name):
+                elements = self.analyzer.parse_markdown_to_elements(md_text)
+                self.assertTrue(len(elements) > 0, f"No elements parsed for '{name}'")
+                # Assuming these simple test cases result in one primary element (paragraph/data_paragraph)
+                # after image extraction (if any, though none here)
+
+                # Filter for paragraph types to test, as other elements like images might be extracted
+                para_elements = [el for el in elements if el['type'] in ['paragraph', 'data_paragraph']]
+                self.assertTrue(len(para_elements) > 0, f"No paragraph/data_paragraph element found for '{name}'")
+
+                # For these specific tests, we expect exactly one paragraph-like element.
+                self.assertEqual(len(para_elements), 1, f"Expected 1 paragraph-like element for '{name}', got {len(para_elements)}")
+                self.assertEqual(para_elements[0]["type"], expected_types[name], f"Type mismatch for '{name}'")
+
+
 if __name__ == '__main__':
     unittest.main()
